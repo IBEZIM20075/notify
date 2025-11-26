@@ -1,96 +1,199 @@
-// sw.js
-self.addEventListener('install', function(event) {
-    console.log('Service Worker installed');
-    self.skipWaiting();
-});
-
-self.addEventListener('activate', function(event) {
-    console.log('Service Worker activated');
-    event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('push', function(event) {
-    console.log('Push received');
-    
-    const options = {
-        body: 'You have a new notification!',
-        icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png', // Use actual icon URL
-        badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
-        image: 'https://cdn-icons-png.flaticon.com/512/733/733585.png', // Large image for Android
-        vibrate: [200, 100, 200, 100, 200], // Longer vibration
-        requireInteraction: true, // Stay until user interacts
-        actions: [
-            {
-                action: 'open',
-                title: 'Open App'
-            },
-            {
-                action: 'close',
-                title: 'Close'
-            }
-        ],
-        tag: 'message-notification', // Group similar notifications
-        data: {
-            url: 'https://example.com',
-            timestamp: new Date().getTime()
-        },
-        // Android-specific options
-        silent: false, // Make sure it's not silent
-        timestamp: Date.now()
-    };
-
-    event.waitUntil(
-        self.registration.showNotification('📱 New Message!', options)
-    );
-});
-
-self.addEventListener('notificationclick', function(event) {
-    console.log('Notification clicked:', event.notification.data);
-    event.notification.close();
-    
-    const urlToOpen = event.notification.data.url || 'https://example.com';
-    
-    event.waitUntil(
-        clients.matchAll({type: 'window'}).then(windowClients => {
-            // Check if there's already a window open with the target URL
-            for (let client of windowClients) {
-                if (client.url === urlToOpen && 'focus' in client) {
-                    return client.focus();
-                }
-            }
-            // If no window is open, open a new one
-            if (clients.openWindow) {
-                return clients.openWindow(urlToOpen);
-            }
-        })
-    );
-});
-
-// Handle notification actions (buttons)
-self.addEventListener('notificationclose', function(event) {
-    console.log('Notification closed');
-});
-
-// Handle messages from the main page
-self.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'SEND_PUSH_NOTIFICATION') {
-        const { title, message, url } = event.data;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp-Style Notifications</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial; background: #667eea; min-height: 100vh; padding: 20px; display: flex; align-items: center; justify-content: center; }
+        .container { background: white; padding: 2rem; border-radius: 15px; max-width: 500px; width: 100%; text-align: center; }
+        button { background: #4CAF50; color: white; border: none; padding: 15px; margin: 10px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:disabled { background: #ccc; }
+        .status { margin: 20px 0; padding: 15px; border-radius: 8px; }
+        .success { background: #d4ffd4; color: #006400; }
+        .error { background: #ffd4d4; color: #8b0000; }
+        .info { background: #d4eaff; color: #004c8b; }
+        .instructions { margin-top: 20px; padding: 15px; background: #f0f8ff; border-radius: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 WhatsApp-Style Notifications</h1>
+        <div class="status info" id="status">Click "Enable Notifications" to start</div>
         
-        self.registration.showNotification(title, {
-            body: message,
-            icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
-            badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
-            image: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
-            vibrate: [200, 100, 200, 100, 200],
-            requireInteraction: true,
-            tag: 'web-notification',
-            data: { url: url },
-            actions: [
-                {
-                    action: 'open',
-                    title: 'View'
+        <button id="enableBtn">1. Enable Notifications</button>
+        <button id="testBtn" disabled>2. Test WhatsApp-Style Notification</button>
+        <button id="messageBtn" disabled>3. Send Message Notification</button>
+        
+        <div class="instructions">
+            <h3>🔧 For Visible Notifications on Android:</h3>
+            <p>• Go to <strong>Phone Settings → Apps → Chrome → Notifications</strong></p>
+            <p>• Enable <strong>"Show notifications"</strong> and <strong>"Pop on screen"</strong></p>
+            <p>• Make sure <strong>Chrome is not battery optimized</strong></p>
+        </div>
+        
+        <div id="debug" style="text-align: left; margin-top: 20px; font-size: 12px; max-height: 150px; overflow-y: auto;"></div>
+    </div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const enableBtn = document.getElementById('enableBtn');
+        const testBtn = document.getElementById('testBtn');
+        const messageBtn = document.getElementById('messageBtn');
+        const debugDiv = document.getElementById('debug');
+
+        function debug(msg) {
+            debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${msg}</div>`;
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function enableNotifications() {
+            debug('Starting notification setup...');
+
+            if (!('serviceWorker' in navigator)) {
+                statusDiv.innerHTML = '❌ Service Workers not supported';
+                statusDiv.className = 'status error';
+                return;
+            }
+
+            if (!('Notification' in window)) {
+                statusDiv.innerHTML = '❌ Notifications not supported';
+                statusDiv.className = 'status error';
+                return;
+            }
+
+            try {
+                debug('Requesting notification permission...');
+                statusDiv.innerHTML = '🔄 Requesting permission...';
+                
+                const permission = await Notification.requestPermission();
+                debug('Permission result: ' + permission);
+
+                if (permission !== 'granted') {
+                    statusDiv.innerHTML = '❌ Permission denied';
+                    statusDiv.className = 'status error';
+                    return;
                 }
-            ]
+
+                debug('Registering service worker...');
+                statusDiv.innerHTML = '🔄 Registering service worker...';
+                
+                const registration = await navigator.serviceWorker.register('./sw.js');
+                debug('Service Worker registered');
+
+                await navigator.serviceWorker.ready;
+                debug('Service Worker ready');
+
+                statusDiv.innerHTML = '✅ Notifications enabled! Ready to test WhatsApp-style notifications';
+                statusDiv.className = 'status success';
+                testBtn.disabled = false;
+                messageBtn.disabled = false;
+                enableBtn.disabled = true;
+
+            } catch (error) {
+                debug('Error: ' + error.message);
+                statusDiv.innerHTML = '❌ Setup failed: ' + error.message;
+                statusDiv.className = 'status error';
+            }
+        }
+
+        function sendWhatsAppNotification() {
+            if (Notification.permission !== 'granted') {
+                statusDiv.innerHTML = '❌ Please enable notifications first';
+                return;
+            }
+
+            try {
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SEND_PUSH_NOTIFICATION',
+                        title: '💬 New WhatsApp Message',
+                        message: 'John: Hey there! How are you doing today?',
+                        url: 'https://web.whatsapp.com'
+                    });
+                    debug('WhatsApp-style notification sent via Service Worker');
+                } else {
+                    // Fallback with better options
+                    const notification = new Notification('💬 New WhatsApp Message', {
+                        body: 'John: Hey there! How are you doing today?',
+                        icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+                        badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+                        image: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+                        vibrate: [200, 100, 200, 100, 200],
+                        requireInteraction: true,
+                        tag: 'whatsapp-message',
+                        data: { url: 'https://web.whatsapp.com' }
+                    });
+
+                    notification.onclick = function() {
+                        window.open('https://web.whatsapp.com', '_blank');
+                    };
+                    debug('WhatsApp-style notification sent via Fallback');
+                }
+
+                statusDiv.innerHTML = '✅ WhatsApp-style notification sent! Should appear on screen.';
+                
+            } catch (error) {
+                debug('Notification error: ' + error.message);
+                statusDiv.innerHTML = '❌ Failed to send notification';
+            }
+        }
+
+        function sendMessageNotification() {
+            if (Notification.permission !== 'granted') {
+                statusDiv.innerHTML = '❌ Please enable notifications first';
+                return;
+            }
+
+            try {
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SEND_PUSH_NOTIFICATION',
+                        title: '👤 New Message',
+                        message: 'Sarah: Dinner tonight? 🍕 Let me know if you are coming!',
+                        url: window.location.href
+                    });
+                    debug('Message notification sent');
+                } else {
+                    const notification = new Notification('👤 New Message', {
+                        body: 'Sarah: Dinner tonight? 🍕 Let me know if you are coming!',
+                        icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+                        badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+                        vibrate: [200, 100, 200],
+                        requireInteraction: true,
+                        tag: 'message'
+                    });
+
+                    notification.onclick = function() {
+                        window.focus();
+                    };
+                }
+
+                statusDiv.innerHTML = '✅ Message notification sent!';
+                
+            } catch (error) {
+                debug('Message error: ' + error.message);
+                statusDiv.innerHTML = '❌ Failed to send message';
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            debug('Page loaded on: ' + navigator.userAgent);
+
+            if (Notification.permission === 'granted') {
+                statusDiv.innerHTML = '✅ Ready to test!';
+                testBtn.disabled = false;
+                messageBtn.disabled = false;
+                enableNotifications();
+            }
         });
-    }
-});
+
+        enableBtn.addEventListener('click', enableNotifications);
+        testBtn.addEventListener('click', sendWhatsAppNotification);
+        messageBtn.addEventListener('click', sendMessageNotification);
+    </script>
+</body>
+</html>
