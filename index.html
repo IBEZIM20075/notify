@@ -1,406 +1,96 @@
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mobile Notification Test</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+// sw.js
+self.addEventListener('install', function(event) {
+    console.log('Service Worker installed');
+    self.skipWaiting();
+});
 
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+self.addEventListener('activate', function(event) {
+    console.log('Service Worker activated');
+    event.waitUntil(self.clients.claim());
+});
 
-        .container {
-            background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-        }
-
-        h1 {
-            color: #333;
-            margin-bottom: 1rem;
-        }
-
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 18px;
-            border-radius: 8px;
-            cursor: pointer;
-            margin: 10px;
-            width: 200px;
-        }
-
-        button:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-        }
-
-        .status {
-            margin: 20px 0;
-            padding: 15px;
-            border-radius: 8px;
-            font-weight: bold;
-        }
-
-        .success { background: #d4ffd4; color: #006400; }
-        .error { background: #ffd4d4; color: #8b0000; }
-        .info { background: #d4eaff; color: #004c8b; }
-
-        .browser-support {
-            margin-top: 20px;
-            padding: 15px;
-            background: #fff3cd;
-            border-radius: 8px;
-            text-align: left;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📱 Mobile Notification Test</h1>
-        
-        <div class="status" id="status">Checking browser support...</div>
-        
-        <button id="testBtn" disabled>Test Notification</button>
-        <button id="requestBtn">Enable Notifications</button>
-        
-        <div class="browser-support">
-            <h3>📋 Browser Support Guide:</h3>
-            <p><strong>✅ Supported:</strong> Chrome Android, Firefox Android, Samsung Internet</p>
-            <p><strong>❌ Not Supported:</strong> iOS Safari (limited), UC Browser, Opera Mini</p>
-            <p><strong>🔧 Requirements:</strong> HTTPS (except localhost), User permission</p>
-        </div>
-    </div>
-
-    <script>
-        const statusDiv = document.getElementById('status');
-        const testBtn = document.getElementById('testBtn');
-        const requestBtn = document.getElementById('requestBtn');
-
-        // Check browser support
-        function checkSupport() {
-            const supports = {
-                serviceWorker: 'serviceWorker' in navigator,
-                pushManager: 'PushManager' in window,
-                notifications: 'Notification' in window
-            };
-
-            console.log('Browser support check:', supports);
-
-            if (!supports.serviceWorker) {
-                statusDiv.innerHTML = '❌ Your browser does not support Service Workers';
-                statusDiv.className = 'status error';
-                return false;
+self.addEventListener('push', function(event) {
+    console.log('Push received');
+    
+    const options = {
+        body: 'You have a new notification!',
+        icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png', // Use actual icon URL
+        badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+        image: 'https://cdn-icons-png.flaticon.com/512/733/733585.png', // Large image for Android
+        vibrate: [200, 100, 200, 100, 200], // Longer vibration
+        requireInteraction: true, // Stay until user interacts
+        actions: [
+            {
+                action: 'open',
+                title: 'Open App'
+            },
+            {
+                action: 'close',
+                title: 'Close'
             }
+        ],
+        tag: 'message-notification', // Group similar notifications
+        data: {
+            url: 'https://example.com',
+            timestamp: new Date().getTime()
+        },
+        // Android-specific options
+        silent: false, // Make sure it's not silent
+        timestamp: Date.now()
+    };
 
-            if (!supports.pushManager) {
-                statusDiv.innerHTML = 'ℹ️ Push notifications not supported, but regular notifications may work';
-                statusDiv.className = 'status info';
-                return 'fallback';
-            }
+    event.waitUntil(
+        self.registration.showNotification('📱 New Message!', options)
+    );
+});
 
-            if (!supports.notifications) {
-                statusDiv.innerHTML = '❌ Your browser does not support notifications';
-                statusDiv.className = 'status error';
-                return false;
-            }
-
-            statusDiv.innerHTML = '✅ Your browser supports notifications!';
-            statusDiv.className = 'status success';
-            return true;
-        }
-
-        // Request notification permission
-        async function requestPermission() {
-            try {
-                statusDiv.innerHTML = '🔄 Requesting notification permission...';
-                statusDiv.className = 'status info';
-
-                const permission = await Notification.requestPermission();
-                
-                if (permission === 'granted') {
-                    statusDiv.innerHTML = '✅ Notification permission granted!';
-                    statusDiv.className = 'status success';
-                    testBtn.disabled = false;
-                    
-                    // Try to register service worker for push notifications
-                    await registerServiceWorker();
-                } else {
-                    statusDiv.innerHTML = '❌ Notification permission denied';
-                    statusDiv.className = 'status error';
+self.addEventListener('notificationclick', function(event) {
+    console.log('Notification clicked:', event.notification.data);
+    event.notification.close();
+    
+    const urlToOpen = event.notification.data.url || 'https://example.com';
+    
+    event.waitUntil(
+        clients.matchAll({type: 'window'}).then(windowClients => {
+            // Check if there's already a window open with the target URL
+            for (let client of windowClients) {
+                if (client.url === urlToOpen && 'focus' in client) {
+                    return client.focus();
                 }
-            } catch (error) {
-                console.error('Permission error:', error);
-                statusDiv.innerHTML = '❌ Error requesting permission';
-                statusDiv.className = 'status error';
             }
-        }
-
-        // Register service worker
-        async function registerServiceWorker() {
-            try {
-                const registration = await navigator.serviceWorker.register('./sw.js');
-                console.log('Service Worker registered:', registration);
-                
-                statusDiv.innerHTML = '✅ Service Worker registered successfully!';
-                return registration;
-            } catch (error) {
-                console.error('Service Worker registration failed:', error);
-                statusDiv.innerHTML = 'ℹ️ Service Worker failed, using fallback notifications';
-                statusDiv.className = 'status info';
-                return null;
+            // If no window is open, open a new one
+            if (clients.openWindow) {
+                return clients.openWindow(urlToOpen);
             }
-        }
+        })
+    );
+});
 
-        // Send test notification
-        function sendTestNotification() {
-            if (Notification.permission !== 'granted') {
-                statusDiv.innerHTML = '❌ Please enable notifications first';
-                statusDiv.className = 'status error';
-                return;
-            }
+// Handle notification actions (buttons)
+self.addEventListener('notificationclose', function(event) {
+    console.log('Notification closed');
+});
 
-            try {
-                // Try service worker notification first
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.ready.then(registration => {
-                        registration.showNotification('Test Notification', {
-                            body: 'This is a test notification from the service worker!',
-                            icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMyMTk2RjMiLz4KPC9zdmc+',
-                            badge: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI0ZGNjAwMCIvPgo8L3N2Zz4K',
-                            vibrate: [200, 100, 200]
-                        });
-                    });
-                } else {
-                    // Fallback to regular notification
-                    const notification = new Notification('Test Notification', {
-                        body: 'This is a regular browser notification!',
-                        icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMyMTk2RjMiLz4KPC9zdmc+',
-                        badge: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iI0ZGNjAwMCIvPgo8L3N2Zz4K'
-                    });
-
-                    notification.onclick = function() {
-                        window.open('https://example.com', '_blank');
-                    };
+// Handle messages from the main page
+self.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'SEND_PUSH_NOTIFICATION') {
+        const { title, message, url } = event.data;
+        
+        self.registration.showNotification(title, {
+            body: message,
+            icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+            badge: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+            image: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+            vibrate: [200, 100, 200, 100, 200],
+            requireInteraction: true,
+            tag: 'web-notification',
+            data: { url: url },
+            actions: [
+                {
+                    action: 'open',
+                    title: 'View'
                 }
-
-                statusDiv.innerHTML = '✅ Test notification sent! Check your notifications.';
-                statusDiv.className = 'status success';
-
-            } catch (error) {
-                console.error('Notification error:', error);
-                statusDiv.innerHTML = '❌ Failed to send notification: ' + error.message;
-                statusDiv.className = 'status error';
-            }
-        }
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            const support = checkSupport();
-            
-            if (support === false) {
-                requestBtn.disabled = true;
-                testBtn.disabled = true;
-            } else if (support === 'fallback') {
-                statusDiv.innerHTML += '<br>⚠️ Using fallback notification system';
-            }
-
-            // Check if already granted
-            if (Notification.permission === 'granted') {
-                statusDiv.innerHTML = '✅ Notifications already enabled!';
-                statusDiv.className = 'status success';
-                testBtn.disabled = false;
-                registerServiceWorker();
-            }
+            ]
         });
-
-        // Event listeners
-        requestBtn.addEventListener('click', requestPermission);
-        testBtn.addEventListener('click', sendTestNotification);
-    </script>
-</body>
-</html> -->
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mobile Push Test</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial; background: #667eea; min-height: 100vh; padding: 20px; display: flex; align-items: center; justify-content: center; }
-        .container { background: white; padding: 2rem; border-radius: 15px; max-width: 500px; width: 100%; text-align: center; }
-        button { background: #4CAF50; color: white; border: none; padding: 15px; margin: 10px; border-radius: 8px; cursor: pointer; width: 100%; }
-        button:disabled { background: #ccc; }
-        .status { margin: 20px 0; padding: 15px; border-radius: 8px; }
-        .success { background: #d4ffd4; color: #006400; }
-        .error { background: #ffd4d4; color: #8b0000; }
-        .info { background: #d4eaff; color: #004c8b; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📱 Push Test</h1>
-        <div class="status info" id="status">Initializing...</div>
-        <button id="enableBtn">Enable Notifications</button>
-        <button id="testBtn" disabled>Test Notification</button>
-        <div id="debug" style="text-align: left; margin-top: 20px; font-size: 12px;"></div>
-    </div>
-
-    <script>
-        const statusDiv = document.getElementById('status');
-        const enableBtn = document.getElementById('enableBtn');
-        const testBtn = document.getElementById('testBtn');
-        const debugDiv = document.getElementById('debug');
-
-        function debug(msg) {
-            debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${msg}</div>`;
-            console.log(msg);
-        }
-
-        // Check if we're on HTTPS or localhost
-        function isSecureContext() {
-            return window.location.protocol === 'https:' || 
-                   window.location.hostname === 'localhost' || 
-                   window.location.hostname === '127.0.0.1';
-        }
-
-        async function enableNotifications() {
-            debug('Starting notification setup...');
-            
-            // Check secure context
-            if (!isSecureContext()) {
-                const message = '❌ Push notifications require HTTPS. Use LocalTunnel or ngrok.';
-                statusDiv.innerHTML = message;
-                statusDiv.className = 'status error';
-                debug(message);
-                debug('Current URL: ' + window.location.href);
-                return;
-            }
-
-            // Check browser support
-            if (!('serviceWorker' in navigator)) {
-                statusDiv.innerHTML = '❌ Service Workers not supported';
-                statusDiv.className = 'status error';
-                return;
-            }
-
-            if (!('Notification' in window)) {
-                statusDiv.innerHTML = '❌ Notifications not supported';
-                statusDiv.className = 'status error';
-                return;
-            }
-
-            try {
-                // Request permission
-                debug('Requesting notification permission...');
-                statusDiv.innerHTML = '🔄 Requesting permission...';
-                
-                const permission = await Notification.requestPermission();
-                debug('Permission result: ' + permission);
-
-                if (permission !== 'granted') {
-                    statusDiv.innerHTML = '❌ Permission denied';
-                    statusDiv.className = 'status error';
-                    return;
-                }
-
-                // Register service worker
-                debug('Registering service worker...');
-                statusDiv.innerHTML = '🔄 Registering service worker...';
-                
-                const registration = await navigator.serviceWorker.register('./sw.js');
-                debug('Service Worker registered');
-
-                // Wait for service worker to be ready
-                await navigator.serviceWorker.ready;
-                debug('Service Worker ready');
-
-                statusDiv.innerHTML = '✅ Notifications enabled!';
-                statusDiv.className = 'status success';
-                testBtn.disabled = false;
-                enableBtn.disabled = true;
-
-            } catch (error) {
-                debug('Error: ' + error.message);
-                statusDiv.innerHTML = '❌ Setup failed: ' + error.message;
-                statusDiv.className = 'status error';
-            }
-        }
-
-        function testNotification() {
-            if (Notification.permission !== 'granted') {
-                statusDiv.innerHTML = '❌ Please enable notifications first';
-                return;
-            }
-
-            try {
-                // Try service worker first
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.ready.then(registration => {
-                        registration.showNotification('Test from Phone!', {
-                            body: 'This should work on your phone! 📱',
-                            icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMyMTk2RjMiLz4KPC9zdmc+',
-                            vibrate: [200, 100, 200]
-                        });
-                    });
-                    debug('Notification sent via Service Worker');
-                } else {
-                    // Fallback
-                    new Notification('Test Fallback', {
-                        body: 'Fallback notification',
-                        icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMyMTk2RjMiLz4KPC9zdmc+'
-                    });
-                    debug('Notification sent via Fallback');
-                }
-
-                statusDiv.innerHTML = '✅ Notification sent! Check your phone.';
-                
-            } catch (error) {
-                debug('Notification error: ' + error.message);
-                statusDiv.innerHTML = '❌ Failed to send notification';
-            }
-        }
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            debug('Page loaded');
-            debug('Secure context: ' + isSecureContext());
-            debug('User Agent: ' + navigator.userAgent);
-
-            if (!isSecureContext()) {
-                statusDiv.innerHTML = '⚠️ Use HTTPS URL for phone testing';
-            }
-
-            // Check if already granted
-            if (Notification.permission === 'granted') {
-                statusDiv.innerHTML = '✅ Ready to test!';
-                testBtn.disabled = false;
-                enableNotifications(); // Register service worker
-            }
-        });
-
-        enableBtn.addEventListener('click', enableNotifications);
-        testBtn.addEventListener('click', testNotification);
-    </script>
-</body>
-</html>
+    }
+});
